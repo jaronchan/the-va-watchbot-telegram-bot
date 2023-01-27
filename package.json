@@ -1,0 +1,25 @@
+{
+  "devDependencies": {
+    "@types/node": "^18.11.18",
+    "eslint-config-prettier": "^8.6.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "prettier": "^2.8.3",
+    "tslint": "^6.1.3",
+    "typescript": "^4.9.4"
+  },
+  "name": "the-va-watchbot-telegram-bot",
+  "version": "1.0.0",
+  "description": "Bot to watch for class spaces at VA Singapore.",
+  "main": "dist/app.js",
+  "repository": "git@github.com:jaronchan/the-va-watchbot-telegram-bot.git",
+  "author": "jaronchan <jaron.chan.jin.jia@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write"
+  },
+  "dependencies": {
+    "telegraf": "^4.11.2"
+  }
+}

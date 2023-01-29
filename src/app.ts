@@ -1,5 +1,10 @@
-import { filter as _filter, chunk as _chunk } from 'lodash';
-import { Context, session, Telegraf } from 'telegraf';
+import {
+  filter as _filter,
+  chunk as _chunk,
+  find as _find,
+  remove as _remove,
+} from 'lodash';
+import { Context, Telegraf } from 'telegraf';
 import { callbackQuery } from 'telegraf/filters';
 
 import { Update } from 'typegram';
@@ -46,6 +51,7 @@ interface WatchedClass extends AvailableClass {
   chatId: number;
   date: string;
   loc: string;
+  stale: boolean;
 }
 
 type WatchList = Array<WatchedClass>;
@@ -331,6 +337,81 @@ bot.on('callback_query', async (ctx) => {
             }
           );
         });
+    }
+
+    if (data.t && data.t === 's') {
+      // TODO: Already watching
+
+      const date = new Date();
+      const zonedDate = utcToZonedTime(date, SG_TIMEZONE);
+      const formattedDate = `${zonedDate.getFullYear().toString()}-${data.d}`;
+
+      const options = {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json;charset=UTF-8',
+        },
+        body: JSON.stringify({
+          Category: 0,
+          AMPM: 'ALL',
+          ISODate: formattedDate,
+          SiteID: data.l,
+        }),
+      };
+
+      const fetchClasses = fetch(VIRGIN_ACTIVE_CLASS_QUERY_URL, options);
+
+      fetchClasses.then(async (response) => {
+        const responseData = await response.json();
+        const watchedClass = _find(responseData, (session: any) => {
+          return session.BookingID === data.i;
+        });
+
+        const result: AvailableClass = watchedClass && {
+          name: watchedClass.ClassName,
+          time: watchedClass.TimeString,
+          spaces: watchedClass.SpacesRemaining,
+          instructor: watchedClass.Instructor,
+          booking_id: watchedClass.BookingID,
+        };
+
+        await ctx.answerCbQuery();
+
+        if (result) {
+          const location = LocationNames[data.l as keyof typeof LocationNames];
+          await ctx.reply(
+            `*Watching...*\n\nClass: ${result.time} - ${result.name}${
+              result.instructor && ` (${result.instructor})`
+            }\nDate: ${formattedDate}\nLocation: ${location}\nSpaces Available: *${
+              result.spaces
+            }*`,
+            {
+              parse_mode: 'Markdown',
+            }
+          );
+          watchList.push({
+            ...result,
+            chatId,
+            date: formattedDate,
+            loc: data.l,
+            stale: false,
+          });
+        } else {
+          await ctx.reply(`Class not found.`);
+        }
+      });
+    }
+    if (data.t && data.t === 'c') {
+      _remove(watchList, (watchedClass) => {
+        return (
+          watchedClass.chatId === data.cid &&
+          watchedClass.bookingId === data.bid
+        );
+      });
+
+      await ctx.answerCbQuery();
+      await ctx.reply('Class has been unwatched.');
     }
   }
 });

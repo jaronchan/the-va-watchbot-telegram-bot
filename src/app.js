@@ -250,61 +250,64 @@ bot.on('callback_query', (ctx) => __awaiter(void 0, void 0, void 0, function* ()
                     yield ctx.reply('No sessions available.');
                 }
             }))
-                .catch((error) => __awaiter(void 0, void 0, void 0, function* () {
+                .catch(() => __awaiter(void 0, void 0, void 0, function* () {
                 yield ctx.answerCbQuery();
                 yield ctx.reply(`An error has occurred when getting info for:\n\n*${data.d}*.\n\nThere are either *no more classes* or classes have *yet to be released* for the day.`, {
                     parse_mode: 'Markdown',
                 });
             }));
-            // axios
-            //   .post(VIRGIN_ACTIVE_CLASS_QUERY_URL, {
-            //     Category: 0,
-            //     AMPM: 'ALL',
-            //     ISODate: data.d,
-            //     SiteID: data.l,
-            //   })
-            //   .then((response) => {
-            //     const responseData = response.data;
-            //     const sessions =
-            //       responseData &&
-            //       responseData.map((session) => ({
-            //         name: session.ClassName,
-            //         time: session.TimeString,
-            //         spaces: session.SpacesRemaining,
-            //         instructor: session.Instructor,
-            //         booking_id: session.BookingID,
-            //       }));
-            //     if (sessions && sessions.length > 0) {
-            //       const sessionOptions = sessions.map((option) => ({
-            //         text: `${option.spaces} - ${option.time} - ${option.name}${
-            //           option.instructor && ` (${option.instructor})`
-            //         }`,
-            //         callback_data: JSON.stringify({
-            //           t: 's',
-            //           d: data.d.slice(5),
-            //           l: data.l,
-            //           i: option.booking_id,
-            //         }),
-            //       }));
-            //       bot.answerCallbackQuery(callbackQuery.id).then(() => {
-            //         bot.sendMessage(
-            //           callback_msg_id,
-            //           `Select a session on *${data.d}*.`,
-            //           {
-            //             parse_mode: 'Markdown',
-            //             reply_markup: {
-            //               inline_keyboard: _.chunk(sessionOptions, 2),
-            //             },
-            //           }
-            //         );
-            //       });
-            //     } else {
-            //       bot.answerCallbackQuery(callbackQuery.id).then(() => {
-            //         bot.sendMessage(callback_msg_id, `No sessions.`);
-            //       });
-            //     }
-            //   })
-            // bot.answerCallbackQuery(callbackQuery.id);
+        }
+        if (data.t && data.t === 's') {
+            // TODO: Already watching
+            const date = new Date();
+            const zonedDate = (0, date_fns_tz_1.utcToZonedTime)(date, SG_TIMEZONE);
+            const formattedDate = `${zonedDate.getFullYear().toString()}-${data.d}`;
+            const options = {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json;charset=UTF-8',
+                },
+                body: JSON.stringify({
+                    Category: 0,
+                    AMPM: 'ALL',
+                    ISODate: formattedDate,
+                    SiteID: data.l,
+                }),
+            };
+            const fetchClasses = fetch(VIRGIN_ACTIVE_CLASS_QUERY_URL, options);
+            fetchClasses.then((response) => __awaiter(void 0, void 0, void 0, function* () {
+                const responseData = yield response.json();
+                const watchedClass = (0, lodash_1.find)(responseData, (session) => {
+                    return session.BookingID === data.i;
+                });
+                const result = watchedClass && {
+                    name: watchedClass.ClassName,
+                    time: watchedClass.TimeString,
+                    spaces: watchedClass.SpacesRemaining,
+                    instructor: watchedClass.Instructor,
+                    booking_id: watchedClass.BookingID,
+                };
+                yield ctx.answerCbQuery();
+                if (result) {
+                    const location = LocationNames[data.l];
+                    yield ctx.reply(`*Watching...*\n\nClass: ${result.time} - ${result.name}${result.instructor && ` (${result.instructor})`}\nDate: ${formattedDate}\nLocation: ${location}\nSpaces Available: *${result.spaces}*`, {
+                        parse_mode: 'Markdown',
+                    });
+                    watchList.push(Object.assign(Object.assign({}, result), { chatId, date: formattedDate, loc: data.l, stale: false }));
+                }
+                else {
+                    yield ctx.reply(`Class not found.`);
+                }
+            }));
+        }
+        if (data.t && data.t === 'c') {
+            (0, lodash_1.remove)(watchList, (watchedClass) => {
+                return (watchedClass.chatId === data.cid &&
+                    watchedClass.bookingId === data.bid);
+            });
+            yield ctx.answerCbQuery();
+            yield ctx.reply('Class has been unwatched.');
         }
     }
 }));

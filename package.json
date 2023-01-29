@@ -16,7 +16,6 @@
   "author": "jaronchan <jaron.chan.jin.jia@gmail.com>",
   "license": "MIT",
   "scripts": {
-    "build": "tsc",
     "start": "node src/app.js",
     "prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write"
   },

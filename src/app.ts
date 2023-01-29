@@ -43,6 +43,16 @@ const getChatIds = () => {
   return [...new Set(watchList.map((watchedClass) => watchedClass.chatId))];
 };
 
+const logCurrentTime = () => {
+  const currentDateTime = new Date();
+  const zonedDateTime = utcToZonedTime(currentDateTime, SG_TIMEZONE);
+
+  console.log(
+    'Current DateTime: ',
+    format(zonedDateTime, 'yyyy-MM-dd HH:mm:ss', { timeZone: SG_TIMEZONE })
+  );
+};
+
 type AvailableClass = {
   bookingId: number;
   time: string;
@@ -421,13 +431,7 @@ bot.on('callback_query', async (ctx) => {
 });
 
 const intervalID = setInterval(async () => {
-  const currentDateTime = new Date();
-  const zonedDateTime = utcToZonedTime(currentDateTime, SG_TIMEZONE);
-
-  console.log(
-    'Current DateTime: ',
-    format(zonedDateTime, 'yyyy-MM-dd HH:mm:ss', { timeZone: SG_TIMEZONE })
-  );
+  logCurrentTime();
   console.log(`No. of Watched Classes: ${watchList.length}\n\n`);
 
   if (watchList.length > 0) {
@@ -547,6 +551,8 @@ const intervalID = setInterval(async () => {
   });
 }, 1 * 60 * 1000);
 
+console.log('Bot is launching...');
+logCurrentTime();
 bot.launch();
 
 // Enable graceful stop
@@ -554,7 +560,6 @@ process.once('SIGINT', async () => {
   clearInterval(intervalID);
   console.log('Terminating bot.');
   const chatIds = getChatIds();
-  console.log(chatIds);
   for (let chatId of chatIds) {
     await bot.telegram.sendMessage(chatId, 'Bot is terminated.');
   }

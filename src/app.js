@@ -41,6 +41,11 @@ const errorToDisplay = (error) => {
 const getChatIds = () => {
     return [...new Set(watchList.map((watchedClass) => watchedClass.chatId))];
 };
+const logCurrentTime = () => {
+    const currentDateTime = new Date();
+    const zonedDateTime = (0, date_fns_tz_1.utcToZonedTime)(currentDateTime, SG_TIMEZONE);
+    console.log('Current DateTime: ', (0, date_fns_tz_1.format)(zonedDateTime, 'yyyy-MM-dd HH:mm:ss', { timeZone: SG_TIMEZONE }));
+};
 const watchList = [];
 const getUserList = (watchList, chatId) => {
     return (0, lodash_1.filter)(watchList, (watchedClass) => {
@@ -326,9 +331,7 @@ bot.on('callback_query', (ctx) => __awaiter(void 0, void 0, void 0, function* ()
     }
 }));
 const intervalID = setInterval(() => __awaiter(void 0, void 0, void 0, function* () {
-    const currentDateTime = new Date();
-    const zonedDateTime = (0, date_fns_tz_1.utcToZonedTime)(currentDateTime, SG_TIMEZONE);
-    console.log('Current DateTime: ', (0, date_fns_tz_1.format)(zonedDateTime, 'yyyy-MM-dd HH:mm:ss', { timeZone: SG_TIMEZONE }));
+    logCurrentTime();
     console.log(`No. of Watched Classes: ${watchList.length}\n\n`);
     if (watchList.length > 0) {
         for (let i = 0; i < watchList.length; i++) {
@@ -396,13 +399,14 @@ const intervalID = setInterval(() => __awaiter(void 0, void 0, void 0, function*
         return watchedClass.stale == true;
     });
 }), 1 * 60 * 1000);
+console.log('Bot is launching...');
+logCurrentTime();
 bot.launch();
 // Enable graceful stop
 process.once('SIGINT', () => __awaiter(void 0, void 0, void 0, function* () {
     clearInterval(intervalID);
     console.log('Terminating bot.');
     const chatIds = getChatIds();
-    console.log(chatIds);
     for (let chatId of chatIds) {
         yield bot.telegram.sendMessage(chatId, 'Bot is terminated.');
     }

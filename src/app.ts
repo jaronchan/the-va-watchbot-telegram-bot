@@ -1,5 +1,7 @@
 import { filter as _filter, chunk as _chunk } from 'lodash';
-import { Context, Telegraf } from 'telegraf';
+import { Context, session, Telegraf } from 'telegraf';
+import { callbackQuery } from 'telegraf/filters';
+
 import { Update } from 'typegram';
 import { eachDayOfInterval, add } from 'date-fns';
 import { format, utcToZonedTime } from 'date-fns-tz';
@@ -13,35 +15,38 @@ const VIRGIN_ACTIVE_CLASS_QUERY_URL =
 
 const SG_TIMEZONE = 'Asia/Singapore';
 
-const locationNames = {
-  SRP: 'Raffles Place',
-  STP: 'Tanjong Pagar',
-  SHV: 'Holland Village',
-  SMO: 'Marina One',
-  SDG: 'Duo Galleria',
-  SPL: 'Paya Lebar',
-};
+enum LocationNames {
+  SRP = 'Raffles Place',
+  STP = 'Tanjong Pagar',
+  SHV = 'Holland Village',
+  SMO = 'Marina One',
+  SDG = 'Duo Galleria',
+  SPL = 'Paya Lebar',
+}
 
-const errorToDisplay = (error) => {
-  if (error.response) {
-    return `VA Server Responded with ${error.response.status}`;
-  } else if (error.request) {
-    return `No response received from VA.`;
-  } else {
-    return `Error: ${error.message}`;
-  }
-};
+// const errorToDisplay = (error) => {
+//   if (error.response) {
+//     return `VA Server Responded with ${error.response.status}`;
+//   } else if (error.request) {
+//     return `No response received from VA.`;
+//   } else {
+//     return `Error: ${error.message}`;
+//   }
+// };
 
-type WatchedClass = {
-  chatId: number;
+type AvailableClass = {
   bookingId: number;
   time: string;
   name: string;
   instructor: string;
-  date: string;
-  loc: string;
   spaces: number;
 };
+
+interface WatchedClass extends AvailableClass {
+  chatId: number;
+  date: string;
+  loc: string;
+}
 
 type WatchList = Array<WatchedClass>;
 
@@ -123,12 +128,14 @@ bot.command('list', async (ctx) => {
 
     const sendListOfClasses = async () => {
       userList.forEach(async (watchedClass) => {
+        const location =
+          LocationNames[watchedClass.loc as keyof typeof LocationNames];
         await ctx.reply(
           `Class: ${watchedClass.time} - ${watchedClass.name}${
             watchedClass.instructor && ` (${watchedClass.instructor})`
-          }\nDate: ${watchedClass.date}\nLocation: ${
-            locationNames[watchedClass.loc]
-          }\nSpaces Available: *${watchedClass.spaces}*`,
+          }\nDate: ${
+            watchedClass.date
+          }\nLocation: ${location}\nSpaces Available: *${watchedClass.spaces}*`,
           {
             parse_mode: 'Markdown',
           }
@@ -167,12 +174,16 @@ bot.command('spaces', async (ctx) => {
     if (sessionWithSpaces.length > 0) {
       const sendListOfClasses = async () => {
         sessionWithSpaces.forEach(async (watchedClass) => {
+          const location =
+            LocationNames[watchedClass.loc as keyof typeof LocationNames];
           await ctx.reply(
             `Class: ${watchedClass.time} - ${watchedClass.name}${
               watchedClass.instructor && ` (${watchedClass.instructor})`
-            }\nDate: ${watchedClass.date}\nLocation: ${
-              locationNames[watchedClass.loc]
-            }\nSpaces Available: *${watchedClass.spaces}*`,
+            }\nDate: ${
+              watchedClass.date
+            }\nLocation: ${location}\nSpaces Available: *${
+              watchedClass.spaces
+            }*`,
             {
               parse_mode: 'Markdown',
             }
@@ -219,3 +230,109 @@ bot.command('cancel', async (ctx) => {
     await ctx.reply(`You're not watching any classes!`);
   }
 });
+
+bot.on('callback_query', async (ctx) => {
+  const chatId = ctx.callbackQuery.from.id;
+  if (ctx.has(callbackQuery('data'))) {
+    const data = JSON.parse(ctx.callbackQuery.data);
+
+    // Respond to 'Location'
+    if (data.t && data.t === 'l') {
+      const date = new Date();
+      const availableDates = eachDayOfInterval({
+        start: date,
+        end: add(date, { days: 8 }),
+      });
+
+      const dateOptions = availableDates.map((date) => ({
+        text: format(utcToZonedTime(date, SG_TIMEZONE), 'yyyy-MM-dd (EEE)', {
+          timeZone: SG_TIMEZONE,
+        }),
+        callback_data: JSON.stringify({
+          t: 'd',
+          d: format(utcToZonedTime(date, SG_TIMEZONE), 'yyyy-MM-dd', {
+            timeZone: SG_TIMEZONE,
+          }),
+          l: data.l,
+        }),
+      }));
+
+      await ctx.answerCbQuery();
+
+      const location = LocationNames[data.l as keyof typeof LocationNames];
+      await ctx.reply(`Select a date for *${location}*.`, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: _chunk(dateOptions, 2),
+        },
+      });
+    }
+
+    if (data.t && data.t === 'd') {
+      const options = {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json;charset=UTF-8',
+        },
+        body: JSON.stringify({
+          Category: 0,
+          AMPM: 'ALL',
+          ISODate: data.d,
+          SiteID: data.l,
+        }),
+      };
+
+      const fetchClasses = fetch(VIRGIN_ACTIVE_CLASS_QUERY_URL, options);
+      fetchClasses
+        .then(async (response) => {
+          const responseData = await response.json();
+          const sessions =
+            responseData &&
+            responseData.map(
+              (session: any): AvailableClass => ({
+                bookingId: session.BookingID,
+                time: session.TimeString,
+                name: session.ClassName,
+                instructor: session.Instructor,
+                spaces: session.SpacesRemaining,
+              })
+            );
+          if (sessions && sessions.length > 0) {
+            const sessionOptions = sessions.map((option: AvailableClass) => ({
+              text: `${option.spaces} - ${option.time} - ${option.name}${
+                option.instructor && ` (${option.instructor})`
+              }`,
+              callback_data: JSON.stringify({
+                t: 's',
+                d: data.d.slice(5),
+                l: data.l,
+                i: option.bookingId,
+              }),
+            }));
+            await ctx.answerCbQuery();
+            await ctx.reply(`Select a session on *${data.d}*.`, {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: _chunk(sessionOptions, 2),
+              },
+            });
+          } else {
+            await ctx.answerCbQuery();
+            await ctx.reply('No sessions available.');
+          }
+        })
+        .catch(async () => {
+          await ctx.answerCbQuery();
+          await ctx.reply(
+            `An error has occurred when getting info for:\n\n*${data.d}*.\n\nThere are either *no more classes* or classes have *yet to be released* for the day.`,
+            {
+              parse_mode: 'Markdown',
+            }
+          );
+        });
+    }
+  }
+});
+
+bot.launch();

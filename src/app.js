@@ -38,6 +38,9 @@ const errorToDisplay = (error) => {
         return `Error: ${error.message}`;
     }
 };
+const getChatIds = () => {
+    return [...new Set(watchList.map((watchedClass) => watchedClass.chatId))];
+};
 const watchList = [];
 const getUserList = (watchList, chatId) => {
     return (0, lodash_1.filter)(watchList, (watchedClass) => {
@@ -358,7 +361,6 @@ const intervalID = setInterval(() => __awaiter(void 0, void 0, void 0, function*
                         instructor: watchedClass.Instructor,
                         bookingId: watchedClass.BookingID,
                     };
-                    // console.log('find result:', result);
                     if (result) {
                         if (watchList[i].spaces !== result.spaces) {
                             const spacesChange = result.spaces - watchList[i].spaces;
@@ -396,13 +398,23 @@ const intervalID = setInterval(() => __awaiter(void 0, void 0, void 0, function*
 }), 1 * 60 * 1000);
 bot.launch();
 // Enable graceful stop
-process.once('SIGINT', () => {
+process.once('SIGINT', () => __awaiter(void 0, void 0, void 0, function* () {
     clearInterval(intervalID);
     console.log('Terminating bot.');
+    const chatIds = getChatIds();
+    console.log(chatIds);
+    for (let chatId of chatIds) {
+        yield bot.telegram.sendMessage(chatId, 'Bot is terminated.');
+    }
     bot.stop('SIGINT');
-});
-process.once('SIGTERM', () => {
+}));
+process.once('SIGTERM', () => __awaiter(void 0, void 0, void 0, function* () {
     clearInterval(intervalID);
     console.log('Terminating bot.');
+    const chatIds = getChatIds();
+    console.log(chatIds);
+    for (let chatId of chatIds) {
+        yield bot.telegram.sendMessage(chatId, 'Bot is terminated.');
+    }
     bot.stop('SIGTERM');
-});
+}));

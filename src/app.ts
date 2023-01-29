@@ -39,6 +39,10 @@ const errorToDisplay = (error: any) => {
   }
 };
 
+const getChatIds = () => {
+  return [...new Set(watchList.map((watchedClass) => watchedClass.chatId))];
+};
+
 type AvailableClass = {
   bookingId: number;
   time: string;
@@ -546,13 +550,23 @@ const intervalID = setInterval(async () => {
 bot.launch();
 
 // Enable graceful stop
-process.once('SIGINT', () => {
+process.once('SIGINT', async () => {
   clearInterval(intervalID);
   console.log('Terminating bot.');
+  const chatIds = getChatIds();
+  console.log(chatIds);
+  for (let chatId of chatIds) {
+    await bot.telegram.sendMessage(chatId, 'Bot is terminated.');
+  }
   bot.stop('SIGINT');
 });
-process.once('SIGTERM', () => {
+process.once('SIGTERM', async () => {
   clearInterval(intervalID);
   console.log('Terminating bot.');
+  const chatIds = getChatIds();
+  console.log(chatIds);
+  for (let chatId of chatIds) {
+    await bot.telegram.sendMessage(chatId, 'Bot is terminated.');
+  }
   bot.stop('SIGTERM');
 });

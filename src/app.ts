@@ -29,15 +29,15 @@ enum LocationNames {
   SPL = 'Paya Lebar',
 }
 
-// const errorToDisplay = (error) => {
-//   if (error.response) {
-//     return `VA Server Responded with ${error.response.status}`;
-//   } else if (error.request) {
-//     return `No response received from VA.`;
-//   } else {
-//     return `Error: ${error.message}`;
-//   }
-// };
+const errorToDisplay = (error: any) => {
+  if (error.response) {
+    return `VA Server Responded with ${error.response.status}`;
+  } else if (error.request) {
+    return `No response received from VA.`;
+  } else {
+    return `Error: ${error.message}`;
+  }
+};
 
 type AvailableClass = {
   bookingId: number;
@@ -368,12 +368,12 @@ bot.on('callback_query', async (ctx) => {
           return session.BookingID === data.i;
         });
 
-        const result: AvailableClass = watchedClass && {
+        const result: AvailableClass | null = watchedClass && {
           name: watchedClass.ClassName,
           time: watchedClass.TimeString,
           spaces: watchedClass.SpacesRemaining,
           instructor: watchedClass.Instructor,
-          booking_id: watchedClass.BookingID,
+          bookingId: watchedClass.BookingID,
         };
 
         await ctx.answerCbQuery();
@@ -416,4 +416,143 @@ bot.on('callback_query', async (ctx) => {
   }
 });
 
+const intervalID = setInterval(async () => {
+  const currentDateTime = new Date();
+  const zonedDateTime = utcToZonedTime(currentDateTime, SG_TIMEZONE);
+
+  console.log(
+    'Current DateTime: ',
+    format(zonedDateTime, 'yyyy-MM-dd HH:mm:ss', { timeZone: SG_TIMEZONE })
+  );
+  console.log(`No. of Watched Classes: ${watchList.length}\n\n`);
+
+  if (watchList.length > 0) {
+    for (let i = 0; i < watchList.length; i++) {
+      const location =
+        LocationNames[watchList[i].loc as keyof typeof LocationNames];
+      if (!watchList[i].stale) {
+        const options = {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json;charset=UTF-8',
+          },
+          body: JSON.stringify({
+            Category: 0,
+            AMPM: 'ALL',
+            ISODate: watchList[i].date,
+            SiteID: watchList[i].loc,
+          }),
+        };
+
+        const refreshClasses = fetch(VIRGIN_ACTIVE_CLASS_QUERY_URL, options);
+        refreshClasses
+          .then(async (response) => {
+            const responseData = await response.json();
+            const watchedClass = _find(responseData, (session: any) => {
+              return session.BookingID === watchList[i].bookingId;
+            });
+            const result: AvailableClass | null = watchedClass && {
+              name: watchedClass.ClassName,
+              time: watchedClass.TimeString,
+              spaces: watchedClass.SpacesRemaining,
+              instructor: watchedClass.Instructor,
+              bookingId: watchedClass.BookingID,
+            };
+            if (result) {
+              if (watchList[i].spaces !== result.spaces) {
+                const spacesChange = result.spaces - watchList[i].spaces;
+                await bot.telegram.sendMessage(
+                  watchList[i].chatId,
+                  `*SPACES UPDATED!!! (${
+                    spacesChange > 0 ? '+' : ''
+                  }${spacesChange})*\n\nClass: ${result.time} - ${result.name}${
+                    result.instructor && ` (${result.instructor})`
+                  }\nDate: ${
+                    watchList[i].date
+                  }\nLocation: ${location}\nSpaces Available: *${
+                    result.spaces
+                  }*`,
+                  {
+                    parse_mode: 'Markdown',
+                  }
+                );
+                watchList[i].spaces = result.spaces;
+              } else {
+                console.log(
+                  `Chat ID:${watchList[i].chatId}\nClass: ${result.time} - ${
+                    result.name
+                  }${result.instructor && ` (${result.instructor})`}\nDate: ${
+                    watchList[i].date
+                  }\nLocation: ${location}\nSpaces Available: ${
+                    result.spaces
+                  }\n`
+                );
+              }
+            } else {
+              console.log(
+                `${watchList[i].time} - ${watchList[i].name}\n${
+                  watchList[i].instructor && `${watchList[i].instructor}\n`
+                }\nNot found. Likely to have expired.`
+              );
+              await bot.telegram.sendMessage(
+                watchList[i].chatId,
+                `Class: ${watchList[i].time} - ${watchList[i].name}${
+                  watchList[i].instructor && ` (${watchList[i].instructor})`
+                }\nDate: ${
+                  watchList[i].date
+                }\nLocation: ${location}\n\n*Not found. Likely to have expired.*`,
+                {
+                  parse_mode: 'Markdown',
+                }
+              );
+              watchList[i].stale = true;
+            }
+          })
+          .catch(async (error) => {
+            console.log(error);
+            console.log(
+              `\nAn error has occurred for ${watchList[i].time} - ${
+                watchList[i].name
+              }${
+                watchList[i].instructor && ` (${watchList[i].instructor})`
+              } - ${watchList[i].date} - ${location}\n`
+            );
+            await bot.telegram.sendMessage(
+              watchList[i].chatId,
+              `*An error has occurred!*\n${errorToDisplay(error)}\n\nClass: ${
+                watchList[i].time
+              } - ${watchList[i].name}${
+                watchList[i].instructor && ` (${watchList[i].instructor})`
+              }\nDate: ${
+                watchList[i].date
+              }\nLocation: ${location}\nSpaces Available: *${
+                watchList[i].spaces
+              }*`,
+              {
+                parse_mode: 'Markdown',
+              }
+            );
+            watchList[i].stale = true;
+          });
+      }
+    }
+  }
+  _remove(watchList, (watchedClass) => {
+    return watchedClass.stale == true;
+  });
+}, 1 * 60 * 1000);
+
 bot.launch();
+
+// Enable graceful stop
+process.once('SIGINT', () => {
+  clearInterval(intervalID);
+  console.log('Terminating bot.');
+  bot.stop('SIGINT');
+});
+process.once('SIGTERM', () => {
+  clearInterval(intervalID);
+  console.log('Terminating bot.');
+  bot.stop('SIGTERM');
+});
